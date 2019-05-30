@@ -25,7 +25,7 @@ The script performs several tasks, including:
 * Now watch as it does it's thing. Thats all you have to do.
 
 ---
-# Whats in this thing?
+# Whats in this thing and what does it do?
 
 **Key Vault**
 
