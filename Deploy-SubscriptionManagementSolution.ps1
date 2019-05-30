@@ -17,7 +17,7 @@
 .PARAMETER KeyVaultNamePrefix
     Define the prefix for the Key Vault Name.
     Maximum of 10 characters
-    Example: "ADE-KV-"
+    Example: "KeyVault-"
 
 .EXAMPLE
     .\Deploy-SubscriptionManagementSolution.ps1
@@ -39,10 +39,10 @@ Param
 
     # Define the prefix for the Key Vault Name.
     # Maximum of 10 characters
-    # Example: "ADE-KV-"
-    [parameter(Mandatory=$false,HelpMessage='Example: ADE-KV-')]
+    # Example: "KeyVault-"
+    [parameter(Mandatory=$false,HelpMessage='Example: KeyVault-')]
     [ValidateLength(1,10)]
-    [String]$KeyVaultNamePrefix = 'ADE-KV-'
+    [String]$KeyVaultNamePrefix = 'KeyVault-'
 )
 
 # Set verbose preference
@@ -218,7 +218,6 @@ if (!$KeyVaultTest)
             $NewLocationSelection = $Locations | Out-GridView -Title "The location selected is not valid for Key Vault, please select a new location." -PassThru
             $NewLocation = $NewLocationSelection.Replace(' ','').ToLower()
             $KeyVault = New-AzureRmKeyVault -VaultName $keyVaultName -ResourceGroupName $ResourceGroupName -Location $NewLocation -Sku 'Premium' -Verbose -ErrorAction 'Stop'
-
         }
         else
         {
@@ -238,6 +237,7 @@ catch
     Write-Warning $_
     break
 }
+
 
 Write-Output "Key Vault $KeyVaultName configuration completed successfully"
 #endregion
@@ -5672,6 +5672,54 @@ catch
 }
 #endregion
 
+#endregion
+
+#region Add Virtual Network Firewall Rules to Key Vault
+# Add all VNets to Key Vault Firewall and Enable Service Endpoints
+Write-Output "Making sure Microsoft.KeyVault Service Endpoint is on all Virtual Network Subnets and Updating Key Vault Firewall"
+$VirtualNetworks = Get-AzureRmVirtualNetwork -Verbose -WarningAction 'SilentlyContinue' -ErrorAction 'Stop'
+
+foreach ($VirtualNetwork in $VirtualNetworks)
+{
+    foreach ($Subnet in $VirtualNetwork.Subnets | Where-Object {$_.Name -ne 'GatewaySubnet'})
+    {
+        $VirtualNetworkSubnetConfig = Get-AzureRmVirtualNetworkSubnetConfig -Name $Subnet.Name -VirtualNetwork $VirtualNetwork -Verbose -WarningAction 'SilentlyContinue' -ErrorAction 'Stop'
+        if (($StorageAccountNetworkRuleSet.VirtualNetworkRules.VirtualNetworkResourceId -contains $($Subnet.Id)) -and ($VirtualNetworkSubnetConfig.ServiceEndpoints.Service -contains 'Microsoft.KeyVault'))
+        {
+            Write-Output "Subnet $($Subnet.Name) contains and is already in Key Vault Network Rule Set"
+            Continue
+        }
+        if (!$VirtualNetworkSubnetConfig.ServiceEndpoints.Service)
+        {
+            Write-Output "$($Subnet.Name) has no Service Endpoints"
+            Write-Output "Adding Microsoft.KeyVault Service Endpoint to $($Subnet.Name) in Virtual Network $($VirtualNetwork.Name)"
+            Set-AzureRmVirtualNetworkSubnetConfig -Name $Subnet.Name -VirtualNetwork $VirtualNetwork -AddressPrefix $Subnet.AddressPrefix -ServiceEndpoint 'Microsoft.KeyVault' -WarningAction 'SilentlyContinue' | Set-AzureRmVirtualNetwork -WarningAction 'SilentlyContinue' -Verbose -ErrorAction 'Stop'
+            Add-AzureRmKeyVaultNetworkRule -VaultName $KeyVaultName -VirtualNetworkResourceId $($Subnet.Id) -Verbose -WarningAction 'SilentlyContinue'
+        }
+        else
+        {
+            if ($VirtualNetworkSubnetConfig.ServiceEndpoints.Service -notcontains 'Microsoft.KeyVault')
+            {
+                Write-Output "$($Subnet.Name) is missing Microsoft.Storage Service Endpoint"
+                Write-Output "Adding Microsoft.KeyVault Service Endpoint to $($Subnet.Name) in Virtual Network $($VirtualNetwork.Name)"
+                $ServiceEnpoints = @('Microsoft.KeyVault')
+                $ServiceEnpoints += $VirtualNetworkSubnetConfig.ServiceEndpoints.Service
+                Set-AzureRmVirtualNetworkSubnetConfig -Name $Subnet.Name -VirtualNetwork $VirtualNetwork -AddressPrefix $Subnet.AddressPrefix -ServiceEndpoint $ServiceEnpoints -WarningAction 'SilentlyContinue' | Set-AzureRmVirtualNetwork -WarningAction 'SilentlyContinue' -Verbose -ErrorAction 'Stop'
+                Add-AzureRmKeyVaultNetworkRule -VaultName $KeyVaultName -VirtualNetworkResourceId $($Subnet.Id) -Verbose -WarningAction 'SilentlyContinue'
+            }
+            else
+            {
+                Write-Output "Microsoft.KeyVault Service Endpoint found on Subnet $($Subnet.Name)"
+                Write-Output "Updating Key Vault Network Rule with Subnet $($Subnet.Name)"
+                Add-AzureRmKeyVaultNetworkRule -VaultName $KeyVaultName -VirtualNetworkResourceId $($Subnet.Id) -Verbose -WarningAction 'SilentlyContinue' -ErrorAction 'Stop'
+            }
+        }
+    }
+}
+
+Write-Output "Updating Key Vault Network Rule with default deny rule"
+Update-AzureRmKeyVaultNetworkRuleSet -VaultName $KeyVaultName -DefaultAction Deny -Verbose -WarningAction 'SilentlyContinue' -ErrorAction 'Stop'
+Write-Output "Key Vault Network Rule Set configuration complete"
 #endregion
 
 #region Adding Resource Locks
