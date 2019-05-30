@@ -15,6 +15,18 @@ The script performs several tasks, including:
 * Creates Azure Policy Definitions to deploy Azure Disk Encryption to Virtual Machines (They do not get assigned)
 * Creates locks for the solution so it will not be deleted by accident
 
+**Install Procedure**
+
+* Run the PowerShell script
+* You will be prompted to select your Azure Enviornment. Click the appropriate option and click Ok.
+* You will be prompted to Login. Login with an Azure account that can create Service Principals, Custom Role Definitions, Policy Definition and Resources in the Subscription you are targeting.
+* If you have more than one Subscription, you will be prompted to select one. Pick the target Subscription from the list and click Ok.
+* You will be prompted for a Location for the deployment. All available locations will be displayed. Make your selection and click Ok.
+* Now watch as it does it's thing. Thats all you have to do.
+
+---
+# Whats in this thing?
+
 **Key Vault**
 
 The Key Vault is named KeyVault-{first 13 charachters of your Subscription ID}. 
