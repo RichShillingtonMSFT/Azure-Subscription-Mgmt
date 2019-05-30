@@ -44,7 +44,7 @@ The scripts creates a few custom role definition to limit the Automation Account
     * Microsoft.Compute/virtualMachines/extensions/delete
     * Microsoft.Compute/virtualMachines/extensions/write
     
- * Service Endpoint Manager for Subscription {Subscription ID}
+* Service Endpoint Manager for Subscription {Subscription ID}
   * Can manage Service Endpoints and Endpoint Policies in the Subscription
   * Assigned actions are:
     * Microsoft.Network/serviceEndpointPolicies/delete
