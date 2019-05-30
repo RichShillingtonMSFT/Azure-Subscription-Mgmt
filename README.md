@@ -33,3 +33,52 @@ The Storage Account is named sharedsa{first 13 characters of your Subscription I
 * The administrationscripts container will have a folder named WindowsUpdateScripts where the code for deploying Windows Updates and Windows Update Settings are stored.
 * The subscriptionreports container will have a folder named Reports, where on-demand reports such as Azure Orpahned Objects and Storage Account without VNets are stored.
 
+**Custom Role Definitions**
+
+The scripts creates a few custom role definition to limit the Automation Accounts access to resources.
+
+* Virtual Machine Extension Operator for Subscription {Subscription ID}
+  * Can Read, Delete and Write Extensions to virtual machines in the Subscription
+  * Assigned actions are:
+    * Microsoft.Compute/virtualMachines/extensions/read
+    * Microsoft.Compute/virtualMachines/extensions/delete
+    * Microsoft.Compute/virtualMachines/extensions/write
+    
+ * Service Endpoint Manager for Subscription {Subscription ID}
+  * Can manage Service Endpoints and Endpoint Policies in the Subscription
+  * Assigned actions are:
+    * Microsoft.Network/serviceEndpointPolicies/delete
+    * Microsoft.Network/serviceEndpointPolicies/join/action
+    * Microsoft.Network/serviceEndpointPolicies/joinSubnet/action
+    * Microsoft.Network/locations/virtualNetworkAvailableEndpointServices/read
+    * Microsoft.Network/serviceEndpointPolicies/read
+    * Microsoft.Network/serviceEndpointPolicies/serviceEndpointPolicyDefinitions/delete
+    * Microsoft.Network/serviceEndpointPolicies/serviceEndpointPolicyDefinitions/read
+    * Microsoft.Network/serviceEndpointPolicies/serviceEndpointPolicyDefinitions/write
+    * Microsoft.Network/serviceEndpointPolicies/write
+    * Microsoft.Network/virtualNetworks/subnets/joinViaServiceEndpoint/action
+    * Microsoft.Network/virtualNetworks/write
+    
+**Automation Account**
+ 
+An Automation Account is created named Subscription-Mgmt-Automation-Account-{first 13 charachters of your Subscription ID}
+A RunAs Account named AzureRunAsConnection will be created using a certificate generated using the Key Vault.
+ 
+The Automation Account will be assigned the following permissions:
+  * Subscription Reader
+    * Built-In Role
+    * Scope - Subscription
+  * Key Vault Contributor
+    * Built-In Role
+    * Scope - KeyVault-{first 13 charachters of your Subscription ID}
+  * Virtual Machine Contributor
+    * Built-In Role
+    * Scope - Subscription
+  * Virtual Machine Extension Operator for Subscription {Subscription ID}
+    * Custom Role
+    * Scope - Subscription
+  * Service Endpoint Manager for Subscription {Subscription ID}
+    * Custom Role
+    * Scope - Subscription
+    
+ 
