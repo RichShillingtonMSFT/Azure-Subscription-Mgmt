@@ -116,7 +116,7 @@ $StorageKind = 'StorageV2'
 $StorageAccessTier = 'Hot'
 $AdminScriptsContainerName = 'administrationscripts'
 $WindowsUpdateScriptsFolderName = 'WindowsUpdateScripts'
-$OrphanedObjectReportsFolderName = 'OrphanedObjectReports'
+$ReportsFolderName = 'Reports'
 $SubscriptionReportsContainerName = 'subscriptionreports'
 #endregion
 
@@ -3869,7 +3869,7 @@ $ErrorActionPreference = 'Stop'
 # Set Script Variables
 $ResourceGroupName = '[ResourceGroupName]'
 $StorageAccountName = '[StorageAccountName]'
-$OrphanedObjectReportsFolderName = '[OrphanedObjectReportsFolderName]'
+$ReportsFolderName = '[ReportsFolderName]'
 $SubscriptionReportsContainerName = '[SubscriptionReportsContainerName]'
 
 try
@@ -4053,7 +4053,7 @@ if ($OrphanedObjectsCount -ge '1')
     Update-AzureRmStorageAccountNetworkRuleSet -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -DefaultAction Allow -Verbose -ErrorAction 'Stop' | Out-Null
 
     # Copy File to Azure Storage
-    Write-Verbose "Uploading Report to $SubscriptionReportsContainerName\$OrphanedObjectReportsFolderName"
+    Write-Verbose "Uploading Report to $SubscriptionReportsContainerName\$ReportsFolderName"
     $StorageAccount = Get-AzureRmStorageAccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -ErrorAction Stop
     $Containers = Get-AzureStorageContainer -Context $StorageAccount.Context
     if ($SubscriptionReportsContainerName -notin $Containers.Name)
@@ -4061,7 +4061,7 @@ if ($OrphanedObjectsCount -ge '1')
         New-AzureRmStorageContainer -Name $SubscriptionReportsContainerName -ResourceGroupName $ResourceGroupName -StorageAccountName $StorageAccountName
     }
 
-    Set-AzureStorageBlobContent -BlobType 'Block' -File "$ENV:Temp\$CSVFileName" -Container $SubscriptionReportsContainerName -Blob "$OrphanedObjectReportsFolderName\$CSVFileName" -Context $StorageAccount.Context -Force | Out-Null
+    Set-AzureStorageBlobContent -BlobType 'Block' -File "$ENV:Temp\$CSVFileName" -Container $SubscriptionReportsContainerName -Blob "$ReportsFolderName\$CSVFileName" -Context $StorageAccount.Context -Force | Out-Null
     Write-Verbose "Turning on Storage Account Firewall"
     Update-AzureRmStorageAccountNetworkRuleSet -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -DefaultAction Deny  -WarningAction 'SilentlyContinue' -Verbose -ErrorAction 'Stop' | Out-Null
 
@@ -4069,7 +4069,7 @@ if ($OrphanedObjectsCount -ge '1')
     Write-Verbose "Generating Download Link"
     $StartTime = Get-Date
     $EndTime = $startTime.AddHours(2.0)
-    $DownloadLink = New-AzureStorageBlobSASToken -Context $StorageAccount.Context -Container "$SubscriptionReportsContainerName/$OrphanedObjectReportsFolderName" -Blob $CSVFileName -Permission r -FullUri -StartTime $StartTime -ExpiryTime $EndTime -ErrorAction Stop
+    $DownloadLink = New-AzureStorageBlobSASToken -Context $StorageAccount.Context -Container "$SubscriptionReportsContainerName/$ReportsFolderName" -Blob $CSVFileName -Permission r -FullUri -StartTime $StartTime -ExpiryTime $EndTime -ErrorAction Stop
 
     Write-Output "Orphaned Objects Report can be downloaded until $EndTime from the link below."
     Write-Output "$DownloadLink"
@@ -4087,7 +4087,292 @@ Add-Content -Path $RunbookFilePath -Value $RunbookFileContent
 (Get-Content $RunbookFilePath.FullName).replace('[Environment]', $($Environment.Name)) | Set-Content $RunbookFilePath.FullName
 (Get-Content $RunbookFilePath.FullName).replace('[ResourceGroupName]', $ResourceGroupName) | Set-Content $RunbookFilePath.FullName
 (Get-Content $RunbookFilePath.FullName).replace('[StorageAccountName]', $StorageAccountName) | Set-Content $RunbookFilePath.FullName
-(Get-Content $RunbookFilePath.FullName).replace('[OrphanedObjectReportsFolderName]', $OrphanedObjectReportsFolderName) | Set-Content $RunbookFilePath.FullName
+(Get-Content $RunbookFilePath.FullName).replace('[ReportsFolderName]', $ReportsFolderName) | Set-Content $RunbookFilePath.FullName
+(Get-Content $RunbookFilePath.FullName).replace('[SubscriptionReportsContainerName]', $SubscriptionReportsContainerName) | Set-Content $RunbookFilePath.FullName
+try
+{
+    Write-Output "Importing Runbook $($RunbookFilePath.BaseName)"
+    Import-AzureRmAutomationRunbook -ResourceGroupName $ResourceGroupName -AutomationAccountName $AutomationAccountName -Path $RunbookFilePath.FullName -Type $RunbookType -Verbose -ErrorAction 'Stop'
+    Publish-AzureRmAutomationRunbook -Name $($RunbookFilePath.BaseName) -AutomationAccountName $AutomationAccountName -ResourceGroupName $ResourceGroupName -Verbose -ErrorAction 'Stop'
+}
+catch 
+{
+    Write-Warning $_
+    break
+}
+#endregion
+
+#region Add Get-AzureStorageAccountsWithNoVnetsOrServiceEndpoints Runbook
+$RunbookType = 'PowerShell'
+$RunbookFilePath = New-Item -Path "$env:TEMP\Get-AzureStorageAccountsWithNoVnetsOrServiceEndpoints.ps1" -ItemType File -Force
+$RunbookFileContent = @'
+<#
+.SYNOPSIS
+    Script to search for Azure Storage Accounts with No VNets or Service Endpoints
+
+.DESCRIPTION
+    This script will search every Subscription for Storage Accounts.
+    Each Storage Account will be checked for firewal rules.
+    It will examine each rule to look for:
+        Is the rule defined?
+        If the rule is defined, are there Subnets added?
+        If there are Subnets, do the have Service Endpoints for Microsoft.Storage?
+    All Storage Accounts that do not have firewall rules fully configured with Subnets and Service Endpoints will be added to the CSV file.
+
+.PARAMETER SubscriptionID
+    Provide Target Subscription ID
+    Example: "aed90f7c-19ff-4b65-a0fb-c0186d3a7265"
+
+.EXAMPLE
+    .\Get-AzureStorageAccountsWithNoVnetsOrServiceEndpoints.ps1 -SubscriptionID 'aed90f7c-19ff-4b65-a0fb-c0186d3a7265'
+#>
+[CmdletBinding()]
+param
+(                
+    # Provide Target Subscription ID
+    # Example: "aed90f7c-19ff-4b65-a0fb-c0186d3a7265"
+    [parameter(Mandatory=$false,HelpMessage='Example: aed90f7c-19ff-4b65-a0fb-c0186d3a7265')]
+    [String]$SubscriptionID
+)
+
+# Set Error Action and Verbose Preference
+$VerbosePreference = 'Continue'
+$ErrorActionPreference = 'Stop'
+
+# Set Script Variables
+$ResourceGroupName = '[ResourceGroupName]'
+$StorageAccountName = '[StorageAccountName]'
+$ReportsFolderName = '[ReportsFolderName]'
+$SubscriptionReportsContainerName = '[SubscriptionReportsContainerName]'
+
+try
+{
+    # Get RunAsConnection
+    $RunAsConnection = Get-AutomationConnection -Name "AzureRunAsConnection"
+
+    Add-AzureRmAccount -ServicePrincipal `
+    -TenantId $RunAsConnection.TenantId `
+    -ApplicationId $RunAsConnection.ApplicationId `
+    -CertificateThumbprint $RunAsConnection.CertificateThumbprint `
+    -EnvironmentName '[Environment]' -Verbose
+
+    # Get Subscription Id if not provided
+    if (!$SubscriptionId)
+    {
+        $SubscriptionId = $RunAsConnection.SubscriptionId
+    }
+}
+catch
+{
+    if (!$RunAsConnection)
+    {
+        $ErrorMessage = "Connection $ConnectionName not found."
+        throw $ErrorMessage
+    }
+    else
+    {
+        Write-Error -Message $_.Exception
+        throw $_.Exception
+    }
+}
+
+$Subscription = Get-AzureRmSubscription -SubscriptionId $SubscriptionId
+Set-AzureRmContext -SubscriptionObject $Subscription  | Out-Null
+
+# Create Data Table Structure
+#Write-Output 'Creating DataTable Structure'
+$DataTable = New-Object System.Data.DataTable
+$DataTable.Columns.Add("StorageAccountName","string") | Out-Null
+$DataTable.Columns.Add("Notes","string") | Out-Null
+$DataTable.Columns.Add("StorageAccountSubscriptionName","string") | Out-Null
+$DataTable.Columns.Add("StorageAccountResourceGroupName","string") | Out-Null
+$DataTable.Columns.Add("VNetName","string") | Out-Null
+$DataTable.Columns.Add("VNetResourceGroupName","string") | Out-Null
+$DataTable.Columns.Add("SubnetName","string") | Out-Null
+$DataTable.Columns.Add("VNetSubscriptionName","string") | Out-Null
+
+# Find all storage accounts in the subscription
+$StorageAccounts = Get-AzureRmStorageAccount
+Write-Verbose "Found $($StorageAccounts.Count) Storage Accounts"
+
+# Loop through the storage accounts
+foreach ($StorageAccount in $StorageAccounts)
+{
+    Write-Verbose "Checking Storage Account $($StorageAccount.StorageAccountName)"
+
+    # Check if the storage account has a virtual network rule applied
+    if ($($StorageAccount.NetworkRuleSet.VirtualNetworkRules))
+    {
+        if ($($StorageAccount.NetworkRuleSet.DefaultAction) -eq 'Allow')
+        {
+            Write-Warning "Storage Account $($StorageAccount.StorageAccountName) is set to allow access from all networks"
+            # Add row of data to the CSV file
+            $NewRow = $DataTable.NewRow()
+            $NewRow.StorageAccountName = $($StorageAccount.StorageAccountName)
+            $NewRow.StorageAccountSubscriptionName = $($Subscription.Name)
+            $NewRow.StorageAccountResourceGroupName = $($StorageAccount.ResourceGroupName)
+            $NewRow.VNetName = ''
+            $NewRow.VNetResourceGroupName = ''
+            $NewRow.SubnetName = ''
+            $NewRow.VNetSubscriptionName = ''
+            $NewRow.Notes = 'Storage Account is set to allow access from all networks'
+            $DataTable.Rows.Add($NewRow)
+        }
+        else
+        {
+            Write-Verbose "Found $(($StorageAccount.NetworkRuleSet.VirtualNetworkRules).Count) Virtual Network Rules"
+            foreach ($Rule in $StorageAccount.NetworkRuleSet.VirtualNetworkRules)
+            {
+                # Extract relevant VNet information from the Virtual Network Resource Id
+                $VNetName = ($Rule.VirtualNetworkResourceId.Split('/') | Select-Object -Last 3)[0]
+                $VNetResourceGroupName = ($Rule.VirtualNetworkResourceId.Split('/') | Select-Object -Last 7)[0]
+                $VNetSubscriptionID = ($Rule.VirtualNetworkResourceId.Split('/'))[2]
+                $SubnetName = ($Rule.VirtualNetworkResourceId.Split('/') | Select-Object -Last 1)
+
+                Write-Verbose "Checking VNet $VNetName to see if the subnets are properly configured"
+
+                # If the VNet is in a subscription that is different than the Storage Account, switch the working subscription
+                if ($($Subscription.SubscriptionId) -ne $VNetSubscriptionID)
+                {
+                    Write-Verbose "The storage account is not in the same subscription as the VNet. Switching Subscriptions"
+                    $VNetIsInDifferentSubscription = $true
+                    $VNetSubscription = Get-AzureRmSubscription -SubscriptionId $VNetSubscriptionID
+                    Select-AzureRmSubscription $VNetSubscription | Out-Null
+                }
+
+                # Get the subnet configuration for the extracted VNet
+                try
+                {
+                    $SubnetConfigs = Get-AzureRmVirtualNetwork -Name $VNetName -ResourceGroupName $VNetResourceGroupName -WarningAction SilentlyContinue -ErrorAction Stop | Get-AzureRmVirtualNetworkSubnetConfig -ErrorAction Stop
+                }
+                catch
+                {
+                    # Check to see if there is a 404 error returned
+                    If ($Error[0].Exception -like "*StatusCode: 404*")
+                    {
+                        Write-Warning 'Assigned Subnet or VNet may have been deleted.'
+                        $NewRow = $DataTable.NewRow()
+                        $NewRow.StorageAccountName = $($StorageAccount.StorageAccountName)
+                        $NewRow.StorageAccountSubscriptionName = $($Subscription.Name)
+                        $NewRow.StorageAccountResourceGroupName = $($StorageAccount.ResourceGroupName)
+                        $NewRow.VNetName = $VNetName
+                        $NewRow.VNetResourceGroupName = $VNetResourceGroupName
+                        $NewRow.SubnetName = ($SubnetConfig.Name)
+                        if ($VNetIsInDifferentSubscription -eq $true)
+                        {
+                            $NewRow.VNetSubscriptionName = ($VNetSubscription.Name)
+                        }
+                        else
+                        {
+                            $NewRow.VNetSubscriptionName = ($Subscription.Name)
+                        }
+                        $NewRow.Notes = 'VNet was assigned, but seems to have been deleted.'
+                        $DataTable.Rows.Add($NewRow)
+                        Continue
+                    }
+                    else
+                    {
+                        $_.Exception
+                        break
+                    }
+                }
+                Write-Verbose "Found $($SubnetConfigs.Count) Subnets"
+
+                # Loop through Subnet Configurations to check for Service Endpoints
+                foreach ($SubnetConfig in $SubnetConfigs)
+                {
+                    Write-Verbose "Checking Subnet $($SubnetConfig.Name)"
+                    # Check to see if the attached access VNet Subnet has a Service Endpoint for Microsoft.Storage
+                    if ($($SubnetConfig.ServiceEndpoints.Service) -contains "Microsoft.Storage")
+                    {
+                        Write-Verbose "Storage Account Subnet $($SubnetConfig.Name) has a Service Endpoint for Microsoft.Storage"
+                    }
+                    else
+                    {
+                        Write-Warning "Storage Account $($StorageAccount.StorageAccountName) in Resource Group $($StorageAccount.ResourceGroupName) has no Service Endpoint for Subnet $($SubnetConfig.Name) in VNet $VNetName"
+                        # Add row of data to the CSV file
+                        $NewRow = $DataTable.NewRow()
+                        $NewRow.StorageAccountName = $($StorageAccount.StorageAccountName)
+                        $NewRow.StorageAccountSubscriptionName = $($Subscription.Name)
+                        $NewRow.StorageAccountResourceGroupName = $($StorageAccount.ResourceGroupName)
+                        $NewRow.VNetName = $VNetName
+                        $NewRow.VNetResourceGroupName = $VNetResourceGroupName
+                        $NewRow.SubnetName = ($SubnetConfig.Name)
+                        if ($VNetIsInDifferentSubscription -eq $true)
+                        {
+                            $NewRow.VNetSubscriptionName = ($VNetSubscription.Name)
+                        }
+                        else
+                        {
+                            $NewRow.VNetSubscriptionName = ($Subscription.Name)
+                        }
+                        $NewRow.Notes = 'VNet is assigned, but is missing the Service Endpoint'
+                        $DataTable.Rows.Add($NewRow)
+                    }
+                }
+
+                if ($VNetIsInDifferentSubscription -eq $true)
+                {
+                    # Set the working subscription back to where we started
+                    $VNetIsInDifferentSubscription = $null
+                    Select-AzureRmSubscription -Subscription $Subscription | Out-Null
+                }
+            }
+        }
+    }
+    else
+    {
+        Write-Warning "Storage Account $($StorageAccount.StorageAccountName) in Resource Group $($StorageAccount.ResourceGroupName) has no assigned VNets"
+        # Add row of data to the CSV file
+        $NewRow = $DataTable.NewRow()
+        $NewRow.StorageAccountName = $($StorageAccount.StorageAccountName)
+        $NewRow.StorageAccountSubscriptionName = $($Subscription.Name)
+        $NewRow.StorageAccountResourceGroupName = $($StorageAccount.ResourceGroupName)
+        $NewRow.VNetName = ''
+        $NewRow.VNetResourceGroupName = ''
+        $NewRow.SubnetName = ''
+        $NewRow.VNetSubscriptionName = ''
+        $NewRow.Notes = 'Storage Account has no assigned VNets'
+        $DataTable.Rows.Add($NewRow)
+    }
+}
+
+# Export the results to CSV file
+$CSVFileName = 'StorageAccountWithNoServiceEndpoints' + $(Get-Date -f yyyy-MM-dd) + '.csv'
+$DataTable | Export-Csv "$ENV:Temp\$CSVFileName" -NoTypeInformation -Force
+
+Write-Verbose "Turning off Storage Account Firewall Temporarily"
+Update-AzureRmStorageAccountNetworkRuleSet -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -DefaultAction Allow -Verbose -ErrorAction 'Stop' | Out-Null
+
+# Copy File to Azure Storage
+Write-Verbose "Uploading Report to $SubscriptionReportsContainerName\$ReportsFolderName"
+$StorageAccount = Get-AzureRmStorageAccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -ErrorAction Stop
+$Containers = Get-AzureStorageContainer -Context $StorageAccount.Context
+if ($SubscriptionReportsContainerName -notin $Containers.Name)
+{
+    New-AzureRmStorageContainer -Name $SubscriptionReportsContainerName -ResourceGroupName $ResourceGroupName -StorageAccountName $StorageAccountName
+}
+
+Set-AzureStorageBlobContent -BlobType 'Block' -File "$ENV:Temp\$CSVFileName" -Container $SubscriptionReportsContainerName -Blob "$ReportsFolderName\$CSVFileName" -Context $StorageAccount.Context -Force | Out-Null
+Write-Verbose "Turning on Storage Account Firewall"
+Update-AzureRmStorageAccountNetworkRuleSet -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -DefaultAction Deny  -WarningAction 'SilentlyContinue' -Verbose -ErrorAction 'Stop' | Out-Null
+
+# Make file available for download
+Write-Verbose "Generating Download Link"
+$StartTime = Get-Date
+$EndTime = $startTime.AddHours(2.0)
+$DownloadLink = New-AzureStorageBlobSASToken -Context $StorageAccount.Context -Container "$SubscriptionReportsContainerName/$ReportsFolderName" -Blob $CSVFileName -Permission r -FullUri -StartTime $StartTime -ExpiryTime $EndTime -ErrorAction Stop
+
+Write-Output "Storage Accounts Report can be downloaded until $EndTime from the link below."
+Write-Output "$DownloadLink"
+
+Write-Verbose 'Script processing complete.'
+'@
+Add-Content -Path $RunbookFilePath -Value $RunbookFileContent
+(Get-Content $RunbookFilePath.FullName).replace('[Environment]', $($Environment.Name)) | Set-Content $RunbookFilePath.FullName
+(Get-Content $RunbookFilePath.FullName).replace('[ResourceGroupName]', $ResourceGroupName) | Set-Content $RunbookFilePath.FullName
+(Get-Content $RunbookFilePath.FullName).replace('[StorageAccountName]', $StorageAccountName) | Set-Content $RunbookFilePath.FullName
+(Get-Content $RunbookFilePath.FullName).replace('[ReportsFolderName]', $ReportsFolderName) | Set-Content $RunbookFilePath.FullName
 (Get-Content $RunbookFilePath.FullName).replace('[SubscriptionReportsContainerName]', $SubscriptionReportsContainerName) | Set-Content $RunbookFilePath.FullName
 try
 {
@@ -4603,6 +4888,790 @@ catch
 {
     Write-Warning $_
 }
+#endregion
+
+#region Create Disk Encryption Azure Policies
+
+Write-Output "Creating Azure Policy Definitions"
+
+#region Azure Disk Encryption Extension to Windows Virtual Machines
+# Policy Mode = All or Indexed
+$PolicyMode = 'All'
+
+# PolicyEffect = Audit, Deny, deployIfNotExists, auditIfNotExists, Append
+$PolicyEffect = 'deployIfNotExists'
+
+# Policy Name
+$PolicyDisplayName = "Azure Disk Encryption Extension for Windows Virtual Machines OS and Data Disks - $PolicyEffect"
+$PolicyName = "$PolicyEffect-Windows-ADE-All"
+
+# Policy Description - NOTE: This is also used for Azure Policy Alert Creation. Be detailed..
+$PolicyDescription = 'This Policy locates Azure Windows Virtual Machines that do not have Azure Disk Encryption Extensions deployed.
+It will deploy the extension automatically if a properly configured Key Vault is found in the Subscription.
+For more information on Azure Disk Encryption see https://docs.microsoft.com/en-us/azure/security/azure-security-disk-encryption-overview
+'
+
+# Policy Parameters
+# Policy Parameters Template
+$PolicyParametersFilePath = New-Item -Path "$env:TEMP\$PolicyName-Parameters.json" -ItemType File -Force
+$PolicyParametersFileContent = @"
+{
+      "resourceGroupExceptions": {
+        "type": "Array",
+        "metadata": {
+          "displayName": "Resource Group Exceptions",
+          "description": "The list of Resource Groups that should be excluded from this policy.",
+          "strongType": "existingResourceGroups"
+        }
+      }
+}
+"@
+Add-Content -Path $PolicyParametersFilePath -Value $PolicyParametersFileContent
+
+# Policy Assignment Parameters
+$PolicyParametersSettingsFilePath = New-Item -Path "$env:TEMP\$PolicyName-Parameters-Settings.json" -ItemType File -Force
+$PolicyParametersSettingsFileContent = @"
+{
+    "resourceGroupExceptions": {
+        "value":[]
+    }
+}
+"@
+Add-Content -Path $PolicyParametersSettingsFilePath -Value $PolicyParametersSettingsFileContent
+
+# Policy Rule
+$PolicyFilePath = New-Item -Path "$env:TEMP\$PolicyName.json" -ItemType File -Force
+$PolicyFileContent = @"
+{
+    "if": {
+        "allOf": [
+            {
+                "value": "[resourcegroup().Name]",
+                "notin": "[parameters('resourceGroupExceptions')]"
+            },
+            {
+                "field": "type",
+                "equals": "Microsoft.Compute/virtualMachines"
+            },
+            {
+                "allOf": [
+                  {
+                    "field": "Microsoft.Compute/imagePublisher",
+                    "equals": "MicrosoftWindowsServer"
+                  },
+                  {
+                    "field": "Microsoft.Compute/imageOffer",
+                    "equals": "WindowsServer"
+                  }
+                ]
+            }
+        ]
+    },
+    "then": {
+        "effect": "$PolicyEffect",
+        "details": {
+        "type": "Microsoft.Compute/virtualMachines/extensions",
+        "roleDefinitionIds": [
+            "/providers/microsoft.authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c"
+        ],
+        "existenceCondition": {
+            "allOf": [
+            {
+                "field": "Microsoft.Compute/virtualMachines/extensions/type",
+                "equals": "AzureDiskEncryption"
+            },
+            {
+                "field": "Microsoft.Compute/virtualMachines/extensions/publisher",
+                "equals": "Microsoft.Azure.Security"
+            },
+            {
+                "field": "Microsoft.Compute/virtualMachines/extensions/provisioningState",
+                "equals": "Succeeded"
+            }
+            ]
+        },
+        "deployment": {
+            "properties": {
+            "mode": "incremental",
+            "template": {
+                "`$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+                "contentVersion": "1.0.0.0",
+                "parameters": {
+                "vmName": {
+                    "type": "string"
+                },
+                "location": {
+                    "type": "string"
+                },
+                "keyVaultResourceGroup": {
+                    "type": "string"
+                },
+                "keyVaultName": {
+                    "type": "string"
+                }
+                },
+                "variables": {
+                "vmExtensionName": "AzureDiskEncryption",
+                "keyVaultResourceID": "[resourceId(parameters('keyVaultResourceGroup'), 'Microsoft.KeyVault/vaults/', parameters('keyVaultName'))]"
+                },
+                "resources": [
+                {
+                    "name": "[concat(parameters('vmName'), '/', variables('vmExtensionName'))]",
+                    "type": "Microsoft.Compute/virtualMachines/extensions",
+                    "location": "[parameters('location')]",
+                    "apiVersion": "2018-06-01",
+                    "properties": {
+                    "publisher": "Microsoft.Azure.Security",
+                    "type": "AzureDiskEncryption",
+                    "typeHandlerVersion": "2.2",
+                    "autoUpgradeMinorVersion": true,
+                    "settings": {
+                        "EncryptionOperation": "EnableEncryption",
+                        "KeyVaultURL": "[reference(variables('keyVaultResourceId'),'2016-10-01').vaultUri]",
+                        "KeyVaultResourceId": "[variables('keyVaultResourceID')]",
+                        "VolumeType": "All"
+                    }
+                    }
+                }
+                ],
+                "outputs": {
+                "policy": {
+                    "type": "string",
+                    "value": "[concat('Enabled encryption for VM', ': ', parameters('vmName'))]"
+                }
+                }
+            },
+            "parameters": {
+                "vmName": {
+                "value": "[field('name')]"
+                },
+                "location": {
+                "value": "[field('location')]"
+                },
+                "keyVaultResourceGroup": {
+                "value": "$ResourceGroupName"
+                },
+                "keyVaultName": {
+                "value": "[concat('$KeyVaultNamePrefix', substring(subscription().subscriptionId, 0, 13))]"
+                }
+            }
+            }
+        }
+        }
+    }
+}
+"@
+Add-Content -Path $PolicyFilePath -Value $PolicyFileContent
+
+# Create Definition
+try
+{
+    Write-Output "Creating Policy Definition $PolicyName"
+    $PolicyDefinition = New-AzureRmPolicyDefinition -Name $PolicyName -DisplayName $PolicyDisplayName -Description $PolicyDescription -Policy $($PolicyFilePath.FullName) -SubscriptionId $SubscriptionID -Mode $PolicyMode -Parameter $($PolicyParametersFilePath.FullName)  
+}
+catch 
+{
+    Write-Warning $_
+    break
+}
+#endregion
+
+#region Azure Disk Encryption Extension to Linux Virtual Machines Data Disks Only
+# Policy Mode = All or Indexed
+$PolicyMode = 'All'
+
+# PolicyEffect = Audit, Deny, deployIfNotExists, auditIfNotExists, Append
+$PolicyEffect = 'deployIfNotExists'
+
+# Policy Name
+$PolicyDisplayName = "Azure Disk Encryption Extension for Linux Virtual Machines Data Disks Only - $PolicyEffect"
+$PolicyName = "$PolicyEffect-Linux-ADE-Data"
+
+# Policy Description - NOTE: This is also used for Azure Policy Alert Creation. Be detailed..
+$PolicyDescription = 'This Policy locates Azure Linux Virtual Machines that do not have Azure Disk Encryption Extensions deployed.
+It will deploy the extension automatically if a properly configured Key Vault is found in the Subscription.
+For more information on Azure Disk Encryption see https://docs.microsoft.com/en-us/azure/security/azure-security-disk-encryption-overview
+'
+
+# Policy Parameters
+
+# Policy Parameters Template
+$PolicyParametersFilePath = New-Item -Path "$env:TEMP\$PolicyName-Parameters.json" -ItemType File -Force
+$PolicyParametersFileContent = @"
+{
+      "resourceGroupExceptions": {
+        "type": "Array",
+        "metadata": {
+          "displayName": "Resource Group Exceptions",
+          "description": "The list of Resource Groups that should be excluded from this policy.",
+          "strongType": "existingResourceGroups"
+        }
+      },
+      "CentOSSKUs":{
+        "type": "Array",
+        "metadata": {
+          "displayName": "CentOS SKUs",
+          "description": "CentOS SKUs that support both ONLY Data Disk Encryption"
+        }
+      },
+      "OpenSUSESKUs":{
+        "type": "Array",
+        "metadata": {
+          "displayName": "openSUSE SKUs",
+          "description": "openSUSE SKUs that support ONLY Data Disk Encryption"
+        }
+      },
+      "SLESSKUs":{
+        "type": "Array",
+        "metadata": {
+          "displayName": "SLES SKUs",
+          "description": "SLES SKUs that support ONLY Data Disk Encryption"
+        }
+      },
+      "RHELSKUs":{
+        "type": "Array",
+        "metadata": {
+          "displayName": "RHEL SKUs",
+          "description": "RHEL SKUs that support ONLY Data Disk Encryption"
+        }
+      }
+}
+"@
+Add-Content -Path $PolicyParametersFilePath -Value $PolicyParametersFileContent
+
+# Policy Assignment Parameters
+$PolicyParametersSettingsFilePath = New-Item -Path "$env:TEMP\$PolicyName-Parameters-Settings.json" -ItemType File -Force
+$PolicyParametersSettingsFileContent = @"
+{
+    "resourceGroupExceptions": {
+        "value":[]
+    },
+    "CentOSSKUs": {
+        "value":[
+            "7.0",
+            "7.1",
+            "6.7",
+            "6.6",
+            "6.5",
+            "7-LVM"
+        ]
+    },
+    "OpenSUSESKUs":{
+        "value":[
+            "42.3"
+        ]
+    },
+    "SLESSKUs":{
+        "value":[
+            "12-SP3",
+            "12-SP4"
+         ]
+    },
+    "RHELSKUs":{        
+        "value":[
+            "6.8",
+            "6.7"
+        ]
+    }
+}
+"@
+Add-Content -Path $PolicyParametersSettingsFilePath -Value $PolicyParametersSettingsFileContent
+
+# Policy Rule
+$PolicyFilePath = New-Item -Path "$env:TEMP\$PolicyName.json" -ItemType File -Force
+$PolicyFileContent = @"
+{
+      "if": {
+         "allOf":[
+         {
+            "value": "[resourcegroup().Name]",
+            "notin": "[parameters('resourceGroupExceptions')]"
+         },
+         {
+            "anyOf": [
+                {
+                    "allOf":
+                    [
+                        {
+                            "field": "type",
+                            "equals": "Microsoft.Compute/virtualMachines"
+                        },
+                        {
+                            "field": "Microsoft.Compute/imagePublisher",
+                            "equals": "SUSE"
+                        },
+                        {
+                            "field": "Microsoft.Compute/imageOffer",
+                            "equals": "SLES"
+                        },
+                        {
+                            "field": "Microsoft.Compute/imageSKU",
+                            "in": "[parameters('SLESSKUs')]"
+                        }
+                    ]
+                },
+                {
+                    "allOf":[
+                        {
+                            "field": "type",
+                            "equals": "Microsoft.Compute/virtualMachines"
+                        },
+                        {
+                            "field": "Microsoft.Compute/imagePublisher",
+                            "equals": "RedHat"
+                        },
+                        {
+                            "field": "Microsoft.Compute/imageOffer",
+                            "equals": "RHEL"
+                        },
+                        {
+                            "field": "Microsoft.Compute/imageSKU",
+                            "in": "[parameters('RHELSKUs')]"
+                        }
+                    ]
+                },
+                {
+                    "allOf":
+                    [
+                        {
+                            "field": "type",
+                            "equals": "Microsoft.Compute/virtualMachines"
+                        },
+                        {
+                            "field": "Microsoft.Compute/imagePublisher",
+                            "equals": "SUSE"
+                        },
+                        {
+                            "field": "Microsoft.Compute/imageOffer",
+                            "equals": "openSUSE-Leap"
+                        },
+                        {
+                            "field": "Microsoft.Compute/imageSKU",
+                            "in": "[parameters('OpenSUSESKUs')]"
+                        }
+                    ]
+                },
+                {
+                    "allOf":
+                    [
+                        {
+                            "field": "type",
+                            "equals": "Microsoft.Compute/virtualMachines"
+                        },
+                        {
+                            "field": "Microsoft.Compute/imagePublisher",
+                            "equals": "OpenLogic"
+                        },
+                        {
+                            "field": "Microsoft.Compute/imageOffer",
+                            "in":[
+                                "CentOS",
+                                "CentOS-LVM"
+                            ]
+                        },
+                        {
+                            "field": "Microsoft.Compute/imageSKU",
+                            "in": "[parameters('CentOSSKUs')]"
+                        }
+                    ]
+                }
+
+              ]
+           }
+        ]
+      },
+      "then": {
+        "effect": "$PolicyEffect",
+        "details": {
+          "type": "Microsoft.Compute/virtualMachines/extensions",
+          "roleDefinitionIds": [
+            "/providers/microsoft.authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c"
+          ],
+          "existenceCondition": {
+            "allOf": [
+              {
+                "field": "Microsoft.Compute/virtualMachines/extensions/type",
+                "equals": "AzureDiskEncryptionForLinux"
+              },
+              {
+                "field": "Microsoft.Compute/virtualMachines/extensions/publisher",
+                "equals": "Microsoft.Azure.Security"
+              },
+              {
+                "field": "Microsoft.Compute/virtualMachines/extensions/provisioningState",
+                "equals": "Succeeded"
+              }
+            ]
+          },
+          "deployment": {
+            "properties": {
+              "mode": "incremental",
+              "template": {
+                "`$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+                "contentVersion": "1.0.0.0",
+                "parameters": {
+                  "vmName": {
+                    "type": "string"
+                  },
+                  "location": {
+                    "type": "string"
+                  },
+                  "keyVaultResourceGroup": {
+                    "type": "string"
+                  },
+                  "keyVaultName": {
+                    "type": "string"
+                  }
+                },
+                "variables": {
+                  "vmExtensionName": "AzureDiskEncryptionForLinux",
+                  "keyVaultResourceID": "[resourceId(parameters('keyVaultResourceGroup'), 'Microsoft.KeyVault/vaults/', parameters('keyVaultName'))]"
+                },
+                "resources": [
+                  {
+                    "name": "[concat(parameters('vmName'), '/', variables('vmExtensionName'))]",
+                    "type": "Microsoft.Compute/virtualMachines/extensions",
+                    "location": "[parameters('location')]",
+                    "apiVersion": "2018-06-01",
+                    "properties": {
+                      "publisher": "Microsoft.Azure.Security",
+                      "type": "AzureDiskEncryptionForLinux",
+                      "typeHandlerVersion": "1.1",
+                      "autoUpgradeMinorVersion": true,
+                      "settings": {
+                        "EncryptionOperation": "EnableEncryption",
+                        "KeyVaultURL": "[reference(variables('keyVaultResourceId'),'2016-10-01').vaultUri]",
+                        "KeyVaultResourceId": "[variables('keyVaultResourceID')]",
+                        "VolumeType": "Data"
+                      }
+                    }
+                  }
+                ],
+                "outputs": {
+                  "policy": {
+                    "type": "string",
+                    "value": "[concat('Enabled encryption for VM', ': ', parameters('vmName'))]"
+                  }
+                }
+              },
+              "parameters": {
+                "vmName": {
+                "value": "[field('name')]"
+                },
+                "location": {
+                "value": "[field('location')]"
+                },
+                "keyVaultResourceGroup": {
+                "value": "$ResourceGroupName"
+                },
+                "keyVaultName": {
+                "value": "[concat('$KeyVaultNamePrefix', substring(subscription().subscriptionId, 0, 13))]"
+                }
+              }
+            }
+          }
+        }
+      }
+}
+"@
+Add-Content -Path $PolicyFilePath -Value $PolicyFileContent
+
+# Create Definition
+try
+{
+    Write-Output "Creating Policy Definition $PolicyName"
+    $PolicyDefinition = New-AzureRmPolicyDefinition -Name $PolicyName -DisplayName $PolicyDisplayName -Description $PolicyDescription -Policy $($PolicyFilePath.FullName) -SubscriptionId $SubscriptionID -Mode $PolicyMode -Parameter $($PolicyParametersFilePath.FullName)  
+}
+catch 
+{
+    Write-Warning $_
+    break
+}
+#endregion
+
+#region Azure Disk Encryption Extension to Linux Virtual Machines OS and Data Disks
+# Policy Mode = All or Indexed
+$PolicyMode = 'All'
+
+# PolicyEffect = Audit, Deny, deployIfNotExists, auditIfNotExists, Append
+$PolicyEffect = 'deployIfNotExists'
+
+# Policy Name
+$PolicyDisplayName = "Azure Disk Encryption Extension for Linux Virtual Machines OS and Data Disks - $PolicyEffect"
+$PolicyName = "$PolicyEffect-Linux-ADE-All"
+
+# Policy Description - NOTE: This is also used for Azure Policy Alert Creation. Be detailed..
+$PolicyDescription = 'This Policy locates Azure Linux Virtual Machines that do not have Azure Disk Encryption Extensions deployed.
+It will deploy the extension automatically if a properly configured Key Vault is found in the Subscription.
+For more information on Azure Disk Encryption see https://docs.microsoft.com/en-us/azure/security/azure-security-disk-encryption-overview
+'
+
+# Policy Parameters
+
+# Policy Parameters Template
+$PolicyParametersFilePath = New-Item -Path "$env:TEMP\$PolicyName-Parameters.json" -ItemType File -Force
+$PolicyParametersFileContent = @"
+{
+    "resourceGroupExceptions": {
+    "type": "Array",
+      "metadata": {
+        "displayName": "Resource Group Exceptions",
+        "description": "The list of Resource Groups that should be excluded from this policy.",
+        "strongType": "existingResourceGroups"
+      }
+    },
+    "CentOSSKUs":{
+      "type": "Array",
+      "metadata": {
+        "displayName": "CentOS SKUs",
+        "description": "CentOS SKUs that support both OS & Data Disk Encryption"
+      }
+    },
+    "RHELSKUs":{
+      "type": "Array",
+      "metadata": {
+        "displayName": "RHEL SKUs",
+        "description": "RHEL SKUs that support both OS & Data Disk Encryption"
+      }
+    },
+    "UbuntuSKUs":{
+      "type": "Array",
+      "metadata": {
+        "displayName": "Ubuntu SKUs",
+        "description": "Ubuntu SKUs that support both OS & Data Disk Encryption"
+      }
+    }
+}
+"@
+Add-Content -Path $PolicyParametersFilePath -Value $PolicyParametersFileContent
+
+# Policy Assignment Parameters
+$PolicyParametersSettingsFilePath = New-Item -Path "$env:TEMP\$PolicyName-Parameters-Settings.json" -ItemType File -Force
+$PolicyParametersSettingsFileContent = @"
+{
+    "resourceGroupExceptions": {
+        "value":[]
+    },
+    "CentOSSKUs":{
+        "value":[
+            "6.8",
+            "7.2n",
+            "7.3",
+            "7.4",
+            "7.5"
+        ]
+    },
+    "RHELSKUs":{
+        "value":[
+            "7.2",
+            "7.3",
+            "7.3-DAILY",
+            "7.4",
+            "7.5",
+            "7.6"
+        ]
+    },
+    "UbuntuSKUs":{
+        "value":[
+            "14.04.5-DAILY-LTS",
+            "14.04.5-LTS",
+            "16.04-LTS",
+            "16.04.0-LTS",
+            "18.04-DAILY-LTS",
+            "18.04-LTS"
+        ]
+    }
+}
+"@
+Add-Content -Path $PolicyParametersSettingsFilePath -Value $PolicyParametersSettingsFileContent
+
+# Policy Rule
+$PolicyFilePath = New-Item -Path "$env:TEMP\$PolicyName.json" -ItemType File -Force
+$PolicyFileContent = @"
+{
+    "if": {
+    "allOf":[
+      {
+          "value": "[resourcegroup().Name]",
+          "notin": "[parameters('resourceGroupExceptions')]"
+      },
+      {
+          "anyOf": [
+              {
+                  "allOf":
+                  [
+                      {
+                          "field": "type",
+                          "equals": "Microsoft.Compute/virtualMachines"
+                      },
+                      {
+                          "field": "Microsoft.Compute/imagePublisher",
+                          "equals": "Canonical"
+                      },
+                      {
+                          "field": "Microsoft.Compute/imageOffer",
+                          "equals": "UbuntuServer"
+                      },
+                      {
+                          "field": "Microsoft.Compute/imageSKU",
+                          "in": "[parameters('UbuntuSKUs')]"
+                      }
+                  ]
+              },
+              {
+                  "allOf":[
+                      {
+                          "field": "type",
+                          "equals": "Microsoft.Compute/virtualMachines"
+                      },
+                      {
+                          "field": "Microsoft.Compute/imagePublisher",
+                          "equals": "RedHat"
+                      },
+                      {
+                          "field": "Microsoft.Compute/imageOffer",
+                          "equals": "RHEL"
+                      },
+                      {
+                          "field": "Microsoft.Compute/imageSKU",
+                          "in": "[parameters('RHELSKUs')]"
+                      }
+                  ]
+              },
+              {
+                  "allOf":
+                  [
+                      {
+                          "field": "type",
+                          "equals": "Microsoft.Compute/virtualMachines"
+                      },
+                      {
+                          "field": "Microsoft.Compute/imagePublisher",
+                          "equals": "OpenLogic"
+                      },
+                      {
+                          "field": "Microsoft.Compute/imageOffer",
+                          "equals": "CentOS"
+                      },
+                      {
+                          "field": "Microsoft.Compute/imageSKU",
+                          "in": "[parameters('CentOSSKUs')]"
+                      }
+                  ]
+              }
+            ]
+        }
+      ]
+    },
+    "then": {
+      "effect": "$PolicyEffect",
+      "details": {
+        "type": "Microsoft.Compute/virtualMachines/extensions",
+        "roleDefinitionIds": [
+          "/providers/microsoft.authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c"
+        ],
+        "existenceCondition": {
+          "allOf": [
+            {
+              "field": "Microsoft.Compute/virtualMachines/extensions/type",
+              "equals": "AzureDiskEncryptionForLinux"
+            },
+            {
+              "field": "Microsoft.Compute/virtualMachines/extensions/publisher",
+              "equals": "Microsoft.Azure.Security"
+            },
+            {
+              "field": "Microsoft.Compute/virtualMachines/extensions/provisioningState",
+              "equals": "Succeeded"
+            }
+          ]
+        },
+        "deployment": {
+          "properties": {
+            "mode": "incremental",
+            "template": {
+              "`$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+              "contentVersion": "1.0.0.0",
+              "parameters": {
+                "vmName": {
+                  "type": "string"
+                },
+                "location": {
+                  "type": "string"
+                },
+                "keyVaultResourceGroup": {
+                  "type": "string"
+                },
+                "keyVaultName": {
+                  "type": "string"
+                }
+              },
+              "variables": {
+                "vmExtensionName": "AzureDiskEncryptionForLinux",
+                "keyVaultResourceID": "[resourceId(parameters('keyVaultResourceGroup'), 'Microsoft.KeyVault/vaults/', parameters('keyVaultName'))]"
+              },
+              "resources": [
+                {
+                  "name": "[concat(parameters('vmName'), '/', variables('vmExtensionName'))]",
+                  "type": "Microsoft.Compute/virtualMachines/extensions",
+                  "location": "[parameters('location')]",
+                  "apiVersion": "2018-06-01",
+                  "properties": {
+                    "publisher": "Microsoft.Azure.Security",
+                    "type": "AzureDiskEncryptionForLinux",
+                    "typeHandlerVersion": "1.1",
+                    "autoUpgradeMinorVersion": true,
+                    "settings": {
+                      "EncryptionOperation": "EnableEncryption",
+                      "KeyVaultURL": "[reference(variables('keyVaultResourceId'),'2016-10-01').vaultUri]",
+                      "KeyVaultResourceId": "[variables('keyVaultResourceID')]",
+                      "VolumeType": "All"
+                    }
+                  }
+                }
+              ],
+              "outputs": {
+                "policy": {
+                  "type": "string",
+                  "value": "[concat('Enabled encryption for VM', ': ', parameters('vmName'))]"
+                }
+              }
+            },
+            "parameters": {
+              "vmName": {
+              "value": "[field('name')]"
+              },
+              "location": {
+              "value": "[field('location')]"
+              },
+              "keyVaultResourceGroup": {
+              "value": "$ResourceGroupName"
+              },
+              "keyVaultName": {
+              "value": "[concat('$KeyVaultNamePrefix', substring(subscription().subscriptionId, 0, 13))]"
+              }
+            }
+          }
+        }
+      }
+    }
+}
+"@
+Add-Content -Path $PolicyFilePath -Value $PolicyFileContent
+
+# Create Definition
+try
+{
+    Write-Output "Creating Policy Definition $PolicyName"
+    $PolicyDefinition = New-AzureRmPolicyDefinition -Name $PolicyName -DisplayName $PolicyDisplayName -Description $PolicyDescription -Policy $($PolicyFilePath.FullName) -SubscriptionId $SubscriptionID -Mode $PolicyMode -Parameter $($PolicyParametersFilePath.FullName)  
+}
+catch 
+{
+    Write-Warning $_
+    break
+}
+#endregion
+
 #endregion
 
 #region Adding Resource Locks
