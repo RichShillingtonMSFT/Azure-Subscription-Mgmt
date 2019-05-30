@@ -296,10 +296,14 @@ There are several Runbooks that get deployed with this solution. Some Runbooks a
       
 **Windows Update Scripts**
 
-There are two scripts that used to deploy Windows Updates and set Windows Update settings on Azure Virtual Machines. These scripts are located in the shared Storage Account that gets created. 
+The Windows Update Runbooks and scripts can be used if you cannot use Update Management or you want to patch your VMs immediately and do not want to wait for WSUS, SCCM or Update Management evaluation cycles.
+ 
+There are two scripts that used to deploy Windows Updates and set Windows Update settings on Azure Virtual Machines. These scripts are located in the shared Storage Account that gets created.
+
   * Invoke-WindowsUpdate.ps1
     * This script was developed to be run as a Custom Script Extension on a Windows Azure Virtual Machine
     * The script will force Windows Update client to check for and install Windows Updates according to the computers Windows Update Settings.
+    
   * Set-LocalWindowsUpdateSettings.ps1
     * This script can be used to set the Windows Update Settings for VMs.
     * This is optional and can be used in place of Group Policy for non-domain joined machines.
