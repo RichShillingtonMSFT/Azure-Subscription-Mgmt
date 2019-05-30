@@ -105,7 +105,10 @@ The Policy details are as follows:
     * Policy Action - DeployIfNotExists
     * Policy Location - Subscription
     * Policy Assignment - Not Assigned
-    
+
+These policies can be assigned at or below the scope where it is stored. For more information on Azure Policy including assigning policy see [Link](https://docs.microsoft.com/en-us/azure/governance/policy/overview)
+
+
 **Automation Runbooks**
 
 There are several Runbooks that get deployed with this solution. Some Runbooks are set with default schedules, while others are not. The following is a list of Runbooks, short usage details and schedules that are linked to them.
