@@ -265,20 +265,25 @@ There are several Runbooks that get deployed with this solution. Some Runbooks a
       * The link is good for 2 hours after the script completes.
       
   * Get-AzureStorageAccountsWithNoVnetsOrServiceEndpoints
-    * Runbook Type - PowerShell Workflow
+    * Runbook Type - PowerShell
     * Schedule - Not Scheduled
     * Description
-      * 
+      * This script will search the Subscription for Storage Accounts.
+      * Each Storage Account will be checked for firewal rules.
+      * It will examine each rule to look for:
+        * Is the rule defined?
+        * If the rule is defined, are there Subnets added?
+        * If there are Subnets, do the have Service Endpoints for Microsoft.Storage?
+      * All Storage Accounts that do not have firewall rules fully configured with Subnets and Service Endpoints will be added to the CSV file.
     * Usage Example
-      * This is configured to run automatically on a schedule against the Subscription where it is deployed.
-      * You can choose provide an alternate Subscription ID.
-      
+      * Start the Runbook from Azure Automation.
+      * At the completion of the script, a download link will be displayed in the output.
+      * The link is good for 2 hours after the script completes.
       
   * Update-AutomationAzureModulesForAccount
-    * Runbook Type - PowerShell Workflow
+    * Runbook Type - PowerShell
     * Schedule - Not Scheduled
     * Description
-      * 
+      * This Azure Automation runbook updates Azure PowerShell modules imported into an Azure Automation account with the module versions published to the PowerShell Gallery.
     * Usage Example
-      * This is configured to run automatically on a schedule against the Subscription where it is deployed.
-      * You can choose provide an alternate Subscription ID.
+      * Start the Runbook from Azure Automation Blade, PowerShell, RestAPI or Azure CLI
