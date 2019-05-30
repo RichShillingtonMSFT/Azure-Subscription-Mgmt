@@ -200,6 +200,8 @@ There are several Runbooks that get deployed with this solution. Some Runbooks a
     * Usage Example
       * For a single ResourceGroup use a JSON format string: ['RG-01']
       * For multiple ResourceGroups use a JSON format string: ['RG-01','RG-02','RG-03']
+      * Restart Option - AutoReboot or IgnoreReboot
+      * To force the VMs to check for updates online, type true in the ForceOnlineUpdate box.
       
   * Start-WindowsUpdateDeploymentBySubscription
     * Runbook Type - PowerShell Workflow
@@ -212,6 +214,8 @@ There are several Runbooks that get deployed with this solution. Some Runbooks a
       * The Automation Account must have permissions to deploy script extensions to the Virtual Machines
     * Usage Example
       * Provide a Subscription ID. If no Subscription ID is provided, the current Subscription will be used.
+      * Restart Option - AutoReboot or IgnoreReboot
+      * To force the VMs to check for updates online, type true in the ForceOnlineUpdate box.
       
   * Start-WindowsUpdateDeploymentByVMName
     * Runbook Type - PowerShell Workflow
@@ -225,6 +229,8 @@ There are several Runbooks that get deployed with this solution. Some Runbooks a
     * Usage Example
       * For a single VM use a JSON format string: ['VM-01']
       * For multiple VMs use a JSON format string: ['VM-01','VM-02','VM-03']
+      * Restart Option - AutoReboot or IgnoreReboot
+      * To force the VMs to check for updates online, type true in the ForceOnlineUpdate box.
       
   * Start-DeallocatedVMsBasedOnTags
     * Runbook Type - PowerShell Workflow
@@ -287,3 +293,15 @@ There are several Runbooks that get deployed with this solution. Some Runbooks a
       * This Azure Automation runbook updates Azure PowerShell modules imported into an Azure Automation account with the module versions published to the PowerShell Gallery.
     * Usage Example
       * Start the Runbook from Azure Automation Blade, PowerShell, RestAPI or Azure CLI
+      
+**Windows Update Scripts**
+
+There are two scripts that used to deploy Windows Updates and set Windows Update settings on Azure Virtual Machines. These scripts are located in the shared Storage Account that gets created. 
+  * Invoke-WindowsUpdate.ps1
+    * This script was developed to be run as a Custom Script Extension on a Windows Azure Virtual Machine
+    * The script will force Windows Update client to check for and install Windows Updates according to the computers Windows Update Settings.
+  * Set-LocalWindowsUpdateSettings.ps1
+    * This script can be used to set the Windows Update Settings for VMs.
+    * This is optional and can be used in place of Group Policy for non-domain joined machines.
+    * You can use Azure Storage Explorer to download this file to make changes or upload the file after changes are made.
+    * See the script for more details on parameters and settings.
