@@ -296,7 +296,7 @@ There are several Runbooks that get deployed with this solution. Some Runbooks a
       
 **Windows Update Scripts**
 
-The Windows Update Runbooks and scripts can be used if you cannot use Update Management or you want to patch your VMs immediately and do not want to wait for WSUS, SCCM or Update Management evaluation cycles.
+The Windows Update Runbooks and scripts can be used if you cannot use Update Management or you want to patch your VMs immediately and do not want to wait for WSUS, SCCM or Update Management evaluation cycles. See the *Automation Runbooks* section for details on the Runbooks.
  
 There are two scripts that used to deploy Windows Updates and set Windows Update settings on Azure Virtual Machines. These scripts are located in the shared Storage Account that gets created.
 
