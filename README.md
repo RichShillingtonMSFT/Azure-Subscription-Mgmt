@@ -81,4 +81,26 @@ The Automation Account will be assigned the following permissions:
     * Custom Role
     * Scope - Subscription
     
+ **Azure Policy Definitions**
  
+Three Azure Policy Definitions are created to deploy Azure Disk Encryption. Windows Virtual Machines support both OS and Data Disk Encryption, however different not all Linux Versions support OS and Data Disk Encryption or any encryption at all. Therefore the policy for Linux Virtual Machines was broke up in to two.
+
+For more information on Supported versions see:
+
+Windows Virtual Machines [Link](https://docs.microsoft.com/en-us/azure/security/azure-security-disk-encryption-prerequisites)
+
+Linux Virtual Machines [Link](https://docs.microsoft.com/en-us/azure/security/azure-security-disk-encryption-faq#bkmk_LinuxOSSupport)
+
+The Policy details are as follows:
+  * Azure Disk Encryption Extension to Windows Virtual Machines
+    * Policy Action - DeployIfNotExists
+    * Policy Location - Subscription
+    * Policy Assignment - Not Assigned
+  * Azure Disk Encryption Extension to Linux Virtual Machines Data Disks Only
+    * Policy Action - DeployIfNotExists
+    * Policy Location - Subscription
+    * Policy Assignment - Not Assigned
+  * Azure Disk Encryption Extension to Linux Virtual Machines OS and Data Disks
+    * Policy Action - DeployIfNotExists
+    * Policy Location - Subscription
+    * Policy Assignment - Not Assigned
