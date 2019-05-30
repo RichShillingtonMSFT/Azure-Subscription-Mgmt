@@ -15,6 +15,8 @@ The script performs several tasks, including:
 * Creates Azure Policy Definitions to deploy Azure Disk Encryption to Virtual Machines (They do not get assigned)
 * Creates locks for the solution so it will not be deleted by accident
 
+NOTE: At this time, Azure Disk Encryption (ADE) is not supported with Azure Site Recovery (ASR). I am in the process of creating a workaround using [this](https://docs.microsoft.com/en-us/azure/site-recovery/azure-to-azure-how-to-enable-replication-ade-vms) as a guide.
+
 **Install Procedure**
 
 * Run the PowerShell script
