@@ -21,7 +21,8 @@ The Key Vault is named KeyVault-{first 13 charachters of your Subscription ID}.
 * By default it will be a Premium SKU.
 * The Key Vault will have the firewall enabled.
 * Every Virtual Network Subnet in the Subscription except Gateway Subnets will be added to the Firewall rules and the service endpoint for Microsoft.KeyVault is added to the Virtual Networks.
-* They Key Vault is set for EnabledForDeployment, EnabledForTemplateDeployment and EnabledForDiskEncryption
+* The script locates the External IP Address of the computer running the deployment and adds it to the Firewall exceptions.
+* They Key Vault is set for EnabledForDeployment, EnabledForTemplateDeployment and EnabledForDiskEncryption.
 
 **Storage Account**
 
@@ -104,3 +105,180 @@ The Policy details are as follows:
     * Policy Action - DeployIfNotExists
     * Policy Location - Subscription
     * Policy Assignment - Not Assigned
+    
+**Automation Runbooks**
+
+There are several Runbooks that get deployed with this solution. Some Runbooks are set with default schedules, while others are not. The following is a list of Runbooks, short usage details and schedules that are linked to them.
+
+  * Invoke-ConfigureAzureDiskEncryption
+    * Runbook Type - PowerShell Workflow
+    * Schedule - Runs every hour
+    * Description
+      * This runbook will run Invoke-ConfigureAzureDiskEncryption on VMs that have the OS Volume encrypted, but data disks are not.
+      * This will retrieve the Azure Disk Encryption settings from the OS Drive and set ADE on the data drive with the same settings.
+    * Usage Example
+      * This is configured to run automatically on a schedule against the Subscription where it is deployed.
+      * You can choose provide an alternate Subscription ID.
+      
+  * Add-AllAvailableServiceEndpointsToVirtualNetworks
+    * Runbook Type - PowerShell
+    * Schedule - Runs once per day
+    * Description
+      * This runbook will query Azure to get an updated list of available Service Endpoints.
+      * It will then find all Virtual Networks and Subnets not name GatewaySubnet and add all Available Service Endpoints to the Virtual Network Subnet Configs.
+    * Usage Example
+      * This is configured to run automatically on a schedule against the Subscription where it is deployed.
+      * You can choose provide an alternate Subscription ID.
+      
+  * Add-AllSubnetsToKeyVaultFirewall
+    * Runbook Type - PowerShell
+    * Schedule - Runs once per day
+    * Description
+      * This script will find all Virtual Networks and ensure that the Service Endpoint for Microsoft.KeyVault is added.
+      * It will then update the Key Vault Firewall with the new Subnet(s)
+    * Usage Example
+      * This is configured to run automatically on a schedule against the Subscription where it is deployed.
+      * You can choose provide an alternate Subscription ID.
+      
+  * Add-AllSubnetsToSharedStorageAccountFirewall
+    * Runbook Type - PowerShell
+    * Schedule - Runs once per day
+    * Description
+      * This script will find all Virtual Networks and ensure that the Service Endpoint for Microsoft.Storage is added.
+      * It will then update the Storage Account Firewall with the new Subnet(s)
+    * Usage Example
+      * This is configured to run automatically on a schedule against the Subscription where it is deployed.
+      * You can choose provide an alternate Subscription ID.
+      
+  * Start-DeployWindowsUpdateSettingsByResourceGroup
+    * Runbook Type - PowerShell Workflow
+    * Schedule - Not Scheduled
+    * Description
+      * This runbook will deploy Set-LocalWindowsUpdateSettings.ps1 from a Azure Storage Account to Azure Virtual Machines in specified Resource Groups.
+      * This runbook is designed to use Azure Automation and an Automation Account.
+      * It will deploy the script as a Custom Script Extension.
+      * You must provide Resource Group Name(s) to start.
+      * The Automation Account must have permissions to deploy script extensions to the Virtual Machines
+    * Usage Example
+      * For a single ResourceGroup use a JSON format string: ['RG-01']
+      * For multiple ResourceGroups use a JSON format string: ['RG-01','RG-02','RG-03']
+      
+  * Start-DeployWindowsUpdateSettingsByVMName
+    * Runbook Type - PowerShell Workflow
+    * Schedule - Not Scheduled
+    * Description
+      * This runbook will deploy Set-LocalWindowsUpdateSettings.ps1 from a Azure Storage Account to Azure Virtual Machines.
+      * This runbook is designed to use Azure Automation and an Automation Account.
+      * It will deploy the script as a Custom Script Extension.
+      * You must provide a Azure Virtual Machine Name(s) to start.
+      * The Automation Account must have permissions to deploy script extensions to the Virtual Machines 
+    * Usage Example
+      * For a single VM use a JSON format string: ['VM-01']
+      * For multiple VMs use a JSON format string: ['VM-01','VM-02','VM-03']
+      
+  * Start-DeployWindowsUpdateSettingsBySubscription
+    * Runbook Type - PowerShell Workflow
+    * Schedule - Not Scheduled
+    * Description
+      * This runbook will deploy Set-LocalWindowsUpdateSettings from a Azure Storage Account to Azure Virtual Machines in specified Subscription.
+      * This runbook is designed to use Azure Automation and an Automation Account.
+      * It will deploy the script as a Custom Script Extension.
+      * You must provide a Subscription ID to start.
+      * The Automation Account must have permissions to deploy script extensions to the Virtual Machines
+    * Usage Example
+      * Provide a Subscription ID. If no Subscription ID is provided, the current Subscription will be used.
+      
+  * Start-WindowsUpdateDeploymentByResourceGroup
+    * Runbook Type - PowerShell Workflow
+    * Schedule - Not Scheduled
+    * Description
+      * This runbook will deploy Invoke-WindowsUpdate.ps1 from a Azure Storage Account to Azure Virtual Machines in specified Resource Groups.
+      * This runbook is designed to use Azure Automation and an Automation Account.
+      * It will deploy the script as a Custom Script Extension.
+      * You must provide Resource Group Name(s) to start.
+      * The Automation Account must have permissions to deploy script extensions to the Virtual Machines
+    * Usage Example
+      * For a single ResourceGroup use a JSON format string: ['RG-01']
+      * For multiple ResourceGroups use a JSON format string: ['RG-01','RG-02','RG-03']
+      
+  * Start-WindowsUpdateDeploymentBySubscription
+    * Runbook Type - PowerShell Workflow
+    * Schedule - Not Scheduled
+    * Description
+      * This runbook will deploy Invoke-WindowsUpdate.ps1 from a Azure Storage Account to Azure Virtual Machines in specified Subscription.
+      * This runbook is designed to use Azure Automation and an Automation Account.
+      * It will deploy the script as a Custom Script Extension.
+      * You must provide a Subscription Name to start.
+      * The Automation Account must have permissions to deploy script extensions to the Virtual Machines
+    * Usage Example
+      * Provide a Subscription ID. If no Subscription ID is provided, the current Subscription will be used.
+      
+  * Start-WindowsUpdateDeploymentByVMName
+    * Runbook Type - PowerShell Workflow
+    * Schedule - Not Scheduled
+    * Description
+      * This runbook will deploy Invoke-WindowsUpdate.ps1 from a Azure Storage Account to Azure Virtual Machines.
+      * This runbook is designed to use Azure Automation and an Automation Account.
+      * It will deploy the script as a Custom Script Extension.
+      * You must provide a Azure Virtual Machine Name(s) to start.
+      * The Automation Account must have permissions to deploy script extensions to the Virtual Machines
+    * Usage Example
+      * For a single VM use a JSON format string: ['VM-01']
+      * For multiple VMs use a JSON format string: ['VM-01','VM-02','VM-03']
+      
+  * Start-DeallocatedVMsBasedOnTags
+    * Runbook Type - PowerShell Workflow
+    * Schedule - Runs every hour
+    * Description
+      * This script will look for StartUpDays and StartUpTime tags on ResourceGroups & Virtual Machines.
+      * If the StartUpDays matches the current Day of the week and the StartUpTime is less than or equal to the current time, the VM will be powered on.
+    * Usage Example
+      * Tag - StartUpDays = Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday , Days you want to startup the VMs.
+      * Tag - StartUpTime = 18:00 , Time to shutdown the Azure VM in UTC 24hour format.
+      * Tag - OverrideStartUp = True , Disables automated power on
+      
+  * Stop-RunningVMsBasedOnTags
+    * Runbook Type - PowerShell Workflow
+    * Schedule - Runs every hour
+    * Description
+      * This script will look for ShutdownDays and ShutdownTime tags on ResourceGroups & Virtual Machines.
+      * If the ShutdownDays matches the current Day of the week and the ShutdownTime is less than or equal to the current time, the VM will be shutdown.
+    * Usage Example
+      * Tag - ShutdownDays = Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday , Days you want to shutdown the VMs.
+      * Tag - ShutdownTime = 18:00 , Time to shutdown the Azure VM in UTC 24hour format.
+      * Tag - OverrideShutdown = True , Disables automated shutdown
+
+  * Get-AzureOrphanedObjects
+    * Runbook Type - PowerShell
+    * Schedule - Not Scheduled
+    * Description
+      * This script will search your Azure Subscription to find Resources that are not in use.
+      * It will look for:
+        * Virtual Machines That Are Powered Off
+        * Network Security Groups That Are Not In Use
+        * Network Interfaces That Are Not In Use
+        * Public IP Addresses That Are Not In Use
+        * Disks That Are Not Attached To A VM
+    * Usage Example
+      * Start the Runbook from Azure Automation.
+      * At the completion of the script, a download link will be displayed in the output.
+      * The link is good for 2 hours after the script completes.
+      
+  * Get-AzureStorageAccountsWithNoVnetsOrServiceEndpoints
+    * Runbook Type - PowerShell Workflow
+    * Schedule - Not Scheduled
+    * Description
+      * 
+    * Usage Example
+      * This is configured to run automatically on a schedule against the Subscription where it is deployed.
+      * You can choose provide an alternate Subscription ID.
+      
+      
+  * Update-AutomationAzureModulesForAccount
+    * Runbook Type - PowerShell Workflow
+    * Schedule - Not Scheduled
+    * Description
+      * 
+    * Usage Example
+      * This is configured to run automatically on a schedule against the Subscription where it is deployed.
+      * You can choose provide an alternate Subscription ID.
