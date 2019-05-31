@@ -27,7 +27,7 @@ NOTE: At this time, Azure Disk Encryption (ADE) is not supported with Azure Site
 * Now watch as it does it's thing. Thats all you have to do.
 
 ---
-# Whats in this thing and what does it do?
+# What is in this thing and what does it do?
 
 **Key Vault**
 
