@@ -3,7 +3,7 @@ This deploys a complete package of Azure resources to help you manage resources 
 The script performs several tasks, including:
 
 * Creates a Resource Group named Subscription-Management-RG
-* Creates a Key Vault named KeyVault-{first 13 charachters of your Subscription ID}
+* Creates a Key Vault named KeyVault-{first 13 characters of your Subscription ID}
 * Creates an Azure Automation Account with a RunAs Account
 * Creates custom Role Definitions for the Automation Account
 * Creates a shared Storage Account named sharedsa{first 13 characters of your Subscription ID without the hyphens}
@@ -20,19 +20,19 @@ NOTE: At this time, Azure Disk Encryption (ADE) is not supported with Azure Site
 **Install Procedure**
 
 * Run the PowerShell script
-* You will be prompted to select your Azure Enviornment. Click the appropriate option and click Ok.
+* You will be prompted to select your Azure Environment. Click the appropriate option and click Ok.
 * You will be prompted to Login. Login with an Azure account that can create Service Principals, Custom Role Definitions, Policy Definition and Resources in the Subscription you are targeting.
 * If you have more than one Subscription, you will be prompted to select one. Pick the target Subscription from the list and click Ok.
 * You will be prompted for a Location for the deployment. All available locations will be displayed. Make your selection and click Ok.
-* Now watch as it does it's thing. Thats all you have to do.
+* Now watch as it does its thing. That's all you have to do.
 
 ---
 # What is in this thing and what does it do?
 
 **Key Vault**
 
-The Key Vault is named KeyVault-{first 13 charachters of your Subscription ID}. 
-* By default it will be a Premium SKU.
+The Key Vault is named KeyVault-{first 13 characters of your Subscription ID}. 
+* By default, it will be a Premium SKU.
 * The Key Vault will have the firewall enabled.
 * Every Virtual Network Subnet in the Subscription except Gateway Subnets will be added to the Firewall rules and the service endpoint for Microsoft.KeyVault is added to the Virtual Networks.
 * The script locates the External IP Address of the computer running the deployment and adds it to the Firewall exceptions.
@@ -41,12 +41,12 @@ The Key Vault is named KeyVault-{first 13 charachters of your Subscription ID}.
 **Storage Account**
 
 The Storage Account is named sharedsa{first 13 characters of your Subscription ID without the hyphens}.
-* By default it will be Standard_GRS, StorageV2 and Access Tier Hot.
+* By default, it will be Standard_GRS, StorageV2 and Access Tier Hot.
 * The Storage Account will have the firewall enabled.
 * Every Virtual Network Subnet in the Subscription except Gateway Subnets will be added to the Firewall rules and the service endpoint for Microsoft.Storage is added to the Virtual Networks.
 * Two containers administrationscripts and subscriptionreports are created in the Storage Account.
 * The administrationscripts container will have a folder named WindowsUpdateScripts where the code for deploying Windows Updates and Windows Update Settings are stored.
-* The subscriptionreports container will have a folder named Reports, where on-demand reports such as Azure Orpahned Objects and Storage Account without VNets are stored.
+* The subscriptionreports container will have a folder named Reports, where on-demand reports such as Azure Orphaned Objects and Storage Account without VNets are stored.
 
 **Custom Role Definitions**
 
@@ -76,7 +76,7 @@ The scripts creates a few custom role definition to limit the Automation Account
     
 **Automation Account**
  
-An Automation Account is created named Subscription-Mgmt-Automation-Account-{first 13 charachters of your Subscription ID}
+An Automation Account is created named Subscription-Mgmt-Automation-Account-{first 13 characters of your Subscription ID}
 A RunAs Account named AzureRunAsConnection will be created using a certificate generated using the Key Vault.
  
 The Automation Account will be assigned the following permissions:
@@ -98,7 +98,7 @@ The Automation Account will be assigned the following permissions:
     
  **Azure Policy Definitions**
  
-Three Azure Policy Definitions are created to deploy Azure Disk Encryption. Windows Virtual Machines support both OS and Data Disk Encryption, however different not all Linux Versions support OS and Data Disk Encryption or any encryption at all. Therefore the policy for Linux Virtual Machines was broke up in to two.
+Three Azure Policy Definitions are created to deploy Azure Disk Encryption. Windows Virtual Machines support both OS and Data Disk Encryption, however different not all Linux Versions support OS and Data Disk Encryption or any encryption at all. Therefore, the policy for Linux Virtual Machines was broke up in to two.
 
 For more information on Supported versions see:
 
@@ -135,7 +135,7 @@ There are several Runbooks that get deployed with this solution. Some Runbooks a
       * This will retrieve the Azure Disk Encryption settings from the OS Drive and set ADE on the data drive with the same settings.
     * Usage Example
       * This is configured to run automatically on a schedule against the Subscription where it is deployed.
-      * You can choose provide an alternate Subscription ID.
+      * You can choose to provide an alternate Subscription ID.
       
   * Add-AllAvailableServiceEndpointsToVirtualNetworks
     * Runbook Type - PowerShell
@@ -145,7 +145,7 @@ There are several Runbooks that get deployed with this solution. Some Runbooks a
       * It will then find all Virtual Networks and Subnets not name GatewaySubnet and add all Available Service Endpoints to the Virtual Network Subnet Configs.
     * Usage Example
       * This is configured to run automatically on a schedule against the Subscription where it is deployed.
-      * You can choose provide an alternate Subscription ID.
+      * You can choose to provide an alternate Subscription ID.
       
   * Add-AllSubnetsToKeyVaultFirewall
     * Runbook Type - PowerShell
@@ -155,7 +155,7 @@ There are several Runbooks that get deployed with this solution. Some Runbooks a
       * It will then update the Key Vault Firewall with the new Subnet(s)
     * Usage Example
       * This is configured to run automatically on a schedule against the Subscription where it is deployed.
-      * You can choose provide an alternate Subscription ID.
+      * You can choose to provide an alternate Subscription ID.
       
   * Add-AllSubnetsToSharedStorageAccountFirewall
     * Runbook Type - PowerShell
@@ -165,7 +165,7 @@ There are several Runbooks that get deployed with this solution. Some Runbooks a
       * It will then update the Storage Account Firewall with the new Subnet(s)
     * Usage Example
       * This is configured to run automatically on a schedule against the Subscription where it is deployed.
-      * You can choose provide an alternate Subscription ID.
+      * You can choose to provide an alternate Subscription ID.
       
   * Start-DeployWindowsUpdateSettingsByResourceGroup
     * Runbook Type - PowerShell Workflow
